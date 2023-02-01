@@ -1,0 +1,272 @@
+---
+title: "SBB Auswertung"
+author: "Patrick Meier | Tamedia Datenteam"
+date: "01. Februar 2023"
+output:
+  html_document:
+    number_sections: false
+    code_folding: hide
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    theme: simplex
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
+                      message = FALSE, results = "markup")
+# knitr::knit(..., encoding = getOption("encoding")) 
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(googlesheets4)
+library(robsurvey) # for trimmed mean mean: weighted_mean_trimmed()
+```
+
+```{r}
+WORKING_DIR <- ""
+setwd(WORKING_DIR)
+getwd()
+```
+
+```{r}
+## Function for uploading to GSheets
+gDoc_upload <- function(df, gSheets_url, sheet_name) {
+  googlesheets4::range_clear(gSheets_url, sheet_name, reformat = FALSE)
+  df %>% range_write(gSheets_url, data = ., sheet = sheet_name, reformat = FALSE)
+}
+
+## url zu einem GoogleSheet, falls upload der Resultate gewünscht wird
+gSheets_url <- ""
+```
+
+
+# Lade Verbindungen
+Verbindungen wurden mit dem Script "SBB_Verspätungen.Rmd" aufbereitet.  
+Night-Jet (NJ) Verbindungen werden nicht berücksichtigt. (Es gibt nur eine: Basel-ZH) 
+```{r}
+folder_output <- "Data_output/Fahrten_Tage"
+list_files_Fahrten <- list.files(path = folder_output,  pattern="*.csv")
+
+in_Fahrten <- tibble()
+for (file in list_files_Fahrten){
+  url_file_Verbindungen <- str_c(folder_output, "/", file)
+  print(url_file_Verbindungen)
+  in_temp <- read_csv(url_file_Verbindungen) %>% 
+    mutate(AN_Soll = with_tz(AN_Soll, "CET"),
+           AB_Soll = with_tz(AB_Soll, "CET"))
+  if(dim(in_temp)[1] != 0){
+    in_Fahrten <- in_Fahrten %>% bind_rows(in_temp)
+  }
+}
+
+## Abfahrts-Minuten hinzufügen
+df_Fahrten <- in_Fahrten %>% 
+  mutate(
+    AB_min = lubridate::minute(AB_Soll)) %>% 
+  mutate(
+  Verspätung_valid = Verspätung * (AN_PROGNOSE_STATUS == "REAL"),
+
+  Verspätung_valid_3 = ((Verspätung > 3*60) & (AN_PROGNOSE_STATUS == "REAL") & (FAELLT_AUS_TF == FALSE)),
+  Verspätung_valid_5 = ((Verspätung > 5*60) & (AN_PROGNOSE_STATUS == "REAL") & (FAELLT_AUS_TF == FALSE))
+) %>% 
+  filter(LINIEN_TEXT != "NJ")
+
+```
+
+
+# Aggregiere Daten
+
+### Ausreisser filtern
+
+Züge die weniger als 1x pro Tag fahren werden nicht berücksichtigt.  
+Das am meisten verspätete 1% wird nicht berücksichtigt für die Analyse
+
+```{r}
+## Grenze für für rausgefilterte Strecken
+# (Weniger als ~ 1 Fahrt pro Tag wird rausgefiltert)
+Filter_grenze <- 40
+
+## Das am meisten verspätete 1% wird nicht beachtet
+# Wird erst bei der Berechnung des Mittelwertes verwendet
+Mittelwert_grenze <- 0.99
+
+## Nimm alle Verbindungen raus die weniger als ~1 mal pro Tag Fahren
+df_Fahrten_filtered <- df_Fahrten %>%
+  group_by(Strecke, LINIEN_TEXT, BH_Start, BH_End) %>% 
+  filter(n() > Filter_grenze)
+```
+
+
+### Übersicht
+Hier werden alle Verbindungen einer Strecke in beide Richtungen aggregiert.
+```{r}
+df_Übers <- df_Fahrten_filtered %>%
+  mutate(
+    Strecke_identifier2 = paste(BH_Start, BH_End, sep = " ")) %>% 
+  mutate(Strecke_identifier = str_c(sort(strsplit(Strecke_identifier2, " ")[[1]]), collapse = " ")) %>% 
+  
+  group_by(Strecke_identifier) %>% 
+  summarise(
+    Fahrtzeit_min = min(Fahrtzeit),
+    Linien = str_c(unique(LINIEN_TEXT), collapse = "|"),
+    
+    n_Fahrten = n(),
+    n_fahrten_valid = sum((AN_PROGNOSE_STATUS == "REAL") & FAELLT_AUS_TF == FALSE ),
+    n_fahrten_Ausfall = sum(FAELLT_AUS_TF == TRUE),
+    n_fahrten_NICHT_valid = n_Fahrten - n_fahrten_valid,
+    
+    Verspätung_valid_median = median(Verspätung_valid, na.rm = TRUE),
+    Verspätung_valid_mean_rob = round(weighted_mean_trimmed(Verspätung_valid,
+                                                            w =  rep(1, length(Verspätung_valid)),
+                                                            LB = 0,
+                                                            UB = Mittelwert_grenze, na.rm = TRUE), 0),
+
+    n_Verspätung_valid_3 = sum(Verspätung_valid_3 == TRUE, na.rm = TRUE),
+    n_Verspätung_valid_5 = sum(Verspätung_valid_5 == TRUE, na.rm = TRUE),
+    
+    Anteil_Verspätung_valid_3 = n_Verspätung_valid_3 / n_fahrten_valid, 
+    Anteil_Verspätung_valid_5 = n_Verspätung_valid_5 / n_fahrten_valid,
+    
+    Anteil_Ausfall = n_fahrten_Ausfall / n_Fahrten
+  )
+
+
+## Auf Welchen Strecken gibt es eine Verbindung unter 90 min
+df_Übers_pendler <- df_Übers %>% 
+  filter(Fahrtzeit_min <= 90)
+
+Übersicht_pendler <- df_Übers_pendler %>%
+  pull(Strecke_identifier ) %>%  unique()
+```
+
+
+### Strecken
+Alle verbindungen aggregiert die auf einer Strecke in die selbe Richtung fahren.
+```{r}
+df_Strecken <- df_Fahrten_filtered %>%
+
+  group_by(Strecke, BH_Start, BH_End) %>% 
+  summarise(
+    Fahrtzeit_min = min(Fahrtzeit),
+    Linien = str_c(unique(LINIEN_TEXT), collapse = "|"),
+    
+    n_Fahrten = n(),
+    n_fahrten_valid = sum((AN_PROGNOSE_STATUS == "REAL") & FAELLT_AUS_TF == FALSE ),
+    n_fahrten_Ausfall = sum(FAELLT_AUS_TF == TRUE),
+    n_fahrten_NICHT_valid = n_Fahrten - n_fahrten_valid,
+    
+    Verspätung_valid_median = median(Verspätung_valid, na.rm = TRUE),
+    Verspätung_valid_mean_rob = round(weighted_mean_trimmed(Verspätung_valid,
+                                                            w =  rep(1, length(Verspätung_valid)),
+                                                            LB = 0,
+                                                            UB = Mittelwert_grenze, na.rm = TRUE), 0),
+    
+    n_Verspätung_valid_3 = sum(Verspätung_valid_3 == TRUE, na.rm = TRUE),
+    n_Verspätung_valid_5 = sum(Verspätung_valid_5 == TRUE, na.rm = TRUE),
+    
+    Anteil_Verspätung_valid_3 = n_Verspätung_valid_3 / n_fahrten_valid, 
+    Anteil_Verspätung_valid_5 = n_Verspätung_valid_5 / n_fahrten_valid,
+    
+    Anteil_Ausfall = n_fahrten_Ausfall / n_Fahrten
+  )
+
+## Auf Welchen Strecken gibt es eine Verbindung unter 90 min
+df_Strecken_pendler <- df_Strecken %>% 
+  filter(Fahrtzeit_min <= 90)
+
+Strecken_pendler <- df_Strecken_pendler %>%
+  pull(Strecke) %>%  unique()
+```
+
+
+### Verbindungen
+Alle Verbindugnen einzeln, die auf einer strecke in eine Richtung fahren.
+```{r}
+df_Verbindungen <- df_Fahrten_filtered %>% 
+  group_by(Strecke, LINIEN_TEXT, BH_Start, BH_End) %>% 
+  summarise(
+    Fahrtzeit_min = (sort(Fahrtzeit)[10]),
+    
+    Abfahrtszeit = str_c(AB_min, collapse = "|"),
+    Abfahrtszeit1 = sort(AB_min)[[10]],
+    Abfahrtszeit2 = sort(AB_min, decreasing = TRUE)[[10]],
+    Abfahrtszeit_dif = Abfahrtszeit2 - Abfahrtszeit1,
+    Abfahrtszeit1 = ifelse(Abfahrtszeit1 < 10, str_c("0", as.character(Abfahrtszeit1)) , as.character(Abfahrtszeit1)),
+    Abfahrtszeit2 = ifelse(Abfahrtszeit2 < 10, str_c("0", as.character(Abfahrtszeit2)) , as.character(Abfahrtszeit2)),
+
+    n_Fahrten = n(),
+    n_fahrten_valid = sum((AN_PROGNOSE_STATUS == "REAL") & FAELLT_AUS_TF == FALSE ),
+    n_fahrten_Ausfall = sum(FAELLT_AUS_TF == TRUE),
+    n_fahrten_NICHT_valid = n_Fahrten - n_fahrten_valid,
+    
+    Verspätung_valid_median = median(Verspätung_valid, na.rm = TRUE),
+    Verspätung_valid_mean_rob = round(weighted_mean_trimmed(Verspätung_valid,
+                                                            w = rep(1, length(Verspätung_valid)),
+                                                            LB = 0,
+                                                            UB = Mittelwert_grenze, na.rm = TRUE), 0),
+    
+    n_Verspätung_valid_3 = sum(Verspätung_valid_3 == TRUE, na.rm = TRUE),
+    n_Verspätung_valid_5 = sum(Verspätung_valid_5 == TRUE, na.rm = TRUE),
+    
+    Anteil_Verspätung_valid_3 = n_Verspätung_valid_3 / n_fahrten_valid, 
+    Anteil_Verspätung_valid_5 = n_Verspätung_valid_5 / n_fahrten_valid,
+    
+    Anteil_Ausfall = n_fahrten_Ausfall / n_Fahrten
+  ) %>% 
+  
+  mutate(pendler = Strecke %in% Strecken_pendler) %>% 
+  
+  rowwise() %>% 
+  ## ABfahrtsminuten: Wenn zwei verschiedene Zeiten, dann zwei, sonst eine
+  mutate(
+    Abfahrtszeit_clean = ifelse(Abfahrtszeit_dif < 15, Abfahrtszeit1,
+                                str_c(Abfahrtszeit1, ",", Abfahrtszeit2)))
+```
+
+
+## Mittelwerte
+```{r}
+agg_fahrten <- df_Fahrten_filtered %>% 
+  group_by() %>% 
+  summarise(Art = "Alle Fahrten",
+            n = n(),
+            n_fahrten_valid = sum((AN_PROGNOSE_STATUS == "REAL") & FAELLT_AUS_TF == FALSE ),
+            Verspätung_valid_median = median(Verspätung_valid, na.rm = TRUE),
+            Verspätung_valid_mean_rob = round(weighted_mean_trimmed(Verspätung_valid,
+                                                                    w = rep(1, length(Verspätung_valid)),
+                                                                    LB = 0,
+                                                                    UB = Mittelwert_grenze, na.rm = TRUE), 0),
+            n_Verspätung_valid_3 = sum(Verspätung_valid_3 == TRUE, na.rm = TRUE),
+            n_Verspätung_valid_5 = sum(Verspätung_valid_5 == TRUE, na.rm = TRUE),
+            Anteil_Verspätung_valid_3 = n_Verspätung_valid_3 / n_fahrten_valid, 
+            Anteil_Verspätung_valid_5 = n_Verspätung_valid_5 / n_fahrten_valid)
+```
+
+
+# Upload
+Hier ist ein upload der Resultate dirkt in ein GoogleSheet möglich. Dazu muss oben aber ein url für das Google Sheet angebeben werden und die entsprechenden Reiter im Sheet erstellt werden.
+```{r}
+## Übersicht Strecken
+df_Übers %>%
+  gDoc_upload(gSheets_url = gSheets_url, "Übersicht")
+
+
+## Strecken
+df_Strecken %>% 
+  gDoc_upload(gSheets_url = gSheets_url, "Strecken")
+
+
+## Verbindungen
+df_Verbindungen %>% 
+  select(-c(Abfahrtszeit, Abfahrtszeit1, Abfahrtszeit2, Abfahrtszeit_dif)) %>% 
+  gDoc_upload(gSheets_url = gSheets_url, "Verbindungen")
+
+
+## Durschnittswerte
+agg_fahrten %>% 
+  gDoc_upload(gSheets_url = gSheets_url, "Durchschnitt alle Fahrten")
+```

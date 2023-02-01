@@ -1,0 +1,196 @@
+---
+title: "SBB Verspätung"
+author: "Patrick Meier | Tamedia Datenteam"
+date: "01. Februar 2023"
+output:
+  html_document:
+    number_sections: false
+    code_folding: hide
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    theme: simplex
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
+                      message = FALSE, results = "markup")
+# knitr::knit(..., encoding = getOption("encoding")) 
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(googlesheets4)
+```
+
+```{r}
+## Arbeitsverzeichnis zum speichern der Zwischenresultate
+WORKING_DIR <- ""
+setwd(WORKING_DIR)
+getwd()
+```
+
+
+# Definition Stosszeiten
+Defnition Stosszeiten, jeweils grösser-gleich und Kleiner-gleich:
+```{r}
+SZ <- list()
+SZ$morgen$von <- 7
+SZ$morgen$bis <- 9
+SZ$abend$von <- 17
+SZ$abend$bis <- 19
+SZ
+```
+
+
+# Definition Stationen
+
+```{r}
+
+# Stationen aus Google Sheet einlesen (wenn vorhanden)
+gSheets_url <- ""
+lkp_stationen <- df_Linien <- googlesheets4::read_sheet(gSheets_url)
+
+liste_stationen <- lkp_stationen$Bahnhof
+
+# Oder sonst direkt in dieser Form angeben:
+# liste_stationen <- c("Aarau", "Zürich HB", "Bern", "weitere Stationen")
+```
+
+
+# Finde alle definierten Linien
+
+## SBB Daten
+```{r}
+# Hier sind die entpackten Daten abgelegt vom Open-Data-Portal abgelegt (achtung, hoher Platzbedarf!)
+# https://opentransportdata.swiss/de/ist-daten-archiv/
+
+folder_input <- ""
+list_files <- list.files(path = folder_input,  pattern="*.csv")
+```
+
+
+## Funktion um die Daten eines Tages einzulesen
+Diese Funktion liest das csvs eins Tages ein und sucht darin alle direkten Verbindungen zwischen den definierten Stationen. Die gefundenen Verbindungen werden als DF ausgegeben.
+```{r}
+read_tag <- function(url_day, liste_stationen){
+  ## File lesen und präparieren
+  in_stosszeiten <- read_delim(url_day, delim = ";") %>% 
+    filter( !(VERKEHRSMITTEL_TEXT %in% c("B", "BAT", "BUS", "CAR"))) %>% 
+    mutate(LINIEN_ID = as.character(LINIEN_ID)) %>%
+    mutate(
+      AN_Soll = force_tz(dmy_hm(ANKUNFTSZEIT), "CET"),
+      AB_Soll = force_tz(dmy_hm(ABFAHRTSZEIT), "CET"),
+      Zeit_order = with_tz(as_datetime(ifelse(is.na(AB_Soll), AN_Soll, AB_Soll)), "CET"),
+      AN_Stunden = hour(AN_Soll),
+      AN_Ist = force_tz(dmy_hms(AN_PROGNOSE), "CET"),
+      Wochentag = lubridate::wday(AN_Soll, week_start = 1),
+      Verspätung = AN_Ist - AN_Soll
+
+      ) %>%
+    mutate(
+      Stosszeit = (
+        ((AN_Stunden >= SZ$morgen$von) & (AN_Stunden <= SZ$morgen$bis)) |
+        ((AN_Stunden >= SZ$abend$von) & (AN_Stunden <= SZ$abend$bis))
+      )) %>%
+    group_by(FAHRT_BEZEICHNER) %>% 
+    arrange(Zeit_order) %>% arrange(FAHRT_BEZEICHNER) 
+  
+  
+  ## Schlaufe um alle gewünschten Verbindungen zu finden
+  df_Fahrten <- tibble()
+  
+  for(Station_von in liste_stationen){
+    print(str_c("Von: ", Station_von))
+    
+    for(Station_bis in liste_stationen){
+      if(Station_von != Station_bis){
+        
+        print(str_c("  Bis: ", Station_bis))
+        
+        ## Nur Gruppen mit FAHRT_BEZEICHNER die Station -von und -bis enthalten
+        df_temp <- in_stosszeiten %>%
+          filter(Station_von %in% HALTESTELLEN_NAME,
+                 Station_bis %in% HALTESTELLEN_NAME)
+        
+        if(dim(df_temp)[1] != 0){
+          
+          df_temp_2 <- df_temp %>% 
+
+          # Andere duplizierte HAlte streichen
+          group_by(FAHRT_BEZEICHNER) %>%
+          filter(!duplicated(HALTESTELLEN_NAME)) %>% 
+          filter(
+            which(HALTESTELLEN_NAME == Station_von,
+                  arr.ind = TRUE) < which(HALTESTELLEN_NAME == Station_bis,
+                                          arr.ind = TRUE)) %>% 
+  
+          group_by(FAHRT_BEZEICHNER) %>%
+          filter(row_number() >= which(HALTESTELLEN_NAME == Station_von, arr.ind = TRUE),
+                 row_number() <= which(HALTESTELLEN_NAME == Station_bis, arr.ind = TRUE)
+          ) %>%
+            
+          mutate(
+            Strecke = str_c(Station_von, " --> ", Station_bis)
+          ) 
+  
+        df_Fahrten <- bind_rows(df_Fahrten, df_temp_2)
+        }
+      }
+    }
+  }
+  
+  ## Aggregieren zu Verbindungen
+  df_Verbindungen <- df_Fahrten %>% 
+  group_by(Strecke, FAHRT_BEZEICHNER, LINIEN_TEXT) %>% 
+  summarise(
+    BH_Start = HALTESTELLEN_NAME[1],
+    BH_End = HALTESTELLEN_NAME[n()],
+    Halte = str_c((HALTESTELLEN_NAME), collapse = ">"),
+    Fahrtzeit =  difftime(AN_Soll[n()], AB_Soll[1], units = "mins"),
+    AB_Soll = AB_Soll[1],
+    AN_Soll = AN_Soll[n()],
+    AN_PROGNOSE_STATUS = AN_PROGNOSE_STATUS[n()],
+    FAELLT_AUS_TF = FAELLT_AUS_TF[n()],
+    Verspätung = Verspätung[n()],
+    Stosszeit_Ankunft = Stosszeit[n()],
+    Wochentag_Ankunft = Wochentag[n()]
+  ) %>% 
+    
+  filter(Stosszeit_Ankunft == TRUE,
+         !(Wochentag_Ankunft %in% c(6,7))) %>%
+  group_by(Strecke, LINIEN_TEXT, BH_Start, BH_End)
+  
+  
+  return(df_Verbindungen)
+}
+```
+
+
+### Schlaufe um alle Tage eines Monats einzulesen
+Die Rohdaten werden eingelesen und ein csv-file pro Tag wird gespeichert. In dem csv sind alle FAHRTEN dieses Tage (Abfahrt-Endpunkt). Die obige Funktion wir auf alle csvs im Verzeichnis angewendet. Im output Ordner wird für jeden Tag ein csv gespeichert mit den jeweiligen Fahrten. Dieses ist massiv viel kleiner als die Rohdaten und kann weiter verwendet werden. 
+```{r}
+
+files_out <- list.files(path = "Data_output/Fahrten_Tage/",  pattern="*.csv")
+
+for (file in list_files){
+  url_day <- str_c(folder_input, "/", file)
+  file_out <- str_c("_OUT_", file)
+  url_out <- str_c("Data_output/Fahrten_Tage/", file_out)
+  print(url_day)
+  
+  if(!(file_out %in% files_out)){
+    tryCatch(
+      {
+        df_Fahrten_Tag <- read_tag(url_day = url_day, liste_stationen)
+        df_Fahrten_Tag %>% write_csv(url_out)
+        },
+      error = function(e){
+        print(str_c("!!! Fehler in ", file))}
+    )
+  } else {print("file schon vorhanden")}
+}
+```
+
