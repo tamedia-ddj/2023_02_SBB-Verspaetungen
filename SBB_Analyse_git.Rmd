@@ -40,7 +40,7 @@ gDoc_upload <- function(df, gSheets_url, sheet_name) {
 }
 
 ## url zu einem GoogleSheet, falls upload der Resultate gewünscht wird
-gSheets_url <- ""
+gSheets_url <- "https://docs.google.com/spreadsheets/d/15Ak4mCwkFtfk01fN8lybgYmclJdCAaewMttbRF0W-yM/"
 ```
 
 
@@ -248,6 +248,8 @@ agg_fahrten <- df_Fahrten_filtered %>%
 
 
 # Upload
+Alle Resultate sind in diesem GoogleSheet einsehbar: https://docs.google.com/spreadsheets/d/15Ak4mCwkFtfk01fN8lybgYmclJdCAaewMttbRF0W-yM
+
 Hier ist ein upload der Resultate dirkt in ein GoogleSheet möglich. Dazu muss oben aber ein url für das Google Sheet angebeben werden und die entsprechenden Reiter im Sheet erstellt werden.
 ```{r}
 ## Übersicht Strecken
