@@ -50,8 +50,8 @@ SZ
 ```{r}
 
 # Stationen aus Google Sheet einlesen (wenn vorhanden)
-gSheets_url <- ""
-lkp_stationen <- df_Linien <- googlesheets4::read_sheet(gSheets_url)
+gSheets_url <- "https://docs.google.com/spreadsheets/d/15Ak4mCwkFtfk01fN8lybgYmclJdCAaewMttbRF0W-yM"
+lkp_stationen <- df_Linien <- googlesheets4::read_sheet(gSheets_url, "Auswahl wichtiger Bahnhöfe")
 
 liste_stationen <- lkp_stationen$Bahnhof
 
