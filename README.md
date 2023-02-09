@@ -10,6 +10,8 @@ Die Analyse findet in zwei Teilen statt:
 
 Es wurden Daten aus dem Open-Transport-Data Portal verwendet: https://opentransportdata.swiss/de/dataset/istdaten.
 
+Die Skripts wurden in R-Markdown geschrieben und werden am besten mit R-Studio ausgeführt.
+
 # 1. Auslesen der relevanten Verbindungen
 --> R-Script "[SBB_Verspätung_git.Rmd](SBB_Versp%C3%A4tung_git.Rmd)"
 
