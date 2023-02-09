@@ -248,7 +248,7 @@ agg_fahrten <- df_Fahrten_filtered %>%
 
 
 # Upload
-Alle Resultate sind in diesem GoogleSheet einsehbar: https://docs.google.com/spreadsheets/d/15Ak4mCwkFtfk01fN8lybgYmclJdCAaewMttbRF0W-yM
+Alle Resultate sind in diesem GoogleSheet einsehbar: https://docs.google.com/spreadsheets/d/1YoPTOqTQwlfzCl1znB0g5WgmNr9ZWGLWNmhu9akIvTY/
 
 Hier ist ein upload der Resultate dirkt in ein GoogleSheet möglich. Dazu muss oben aber ein url für das Google Sheet angebeben werden und die entsprechenden Reiter im Sheet erstellt werden.
 ```{r}
