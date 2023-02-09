@@ -21,4 +21,4 @@ Das Skript sucht nun alle relevanten Verbingungen und speichert diese wiederum i
 # 2. Analysieren der Verbindungen
 --> R-Script "[SBB_Analyse_git.Rmd](SBB_Analyse_git.Rmd)"
 
-Dieses Skript liest die CSV Datein mit den Verbindungen ein, die vom vorhergehenden Skript gespeichert wurden. Dann können die Verbindungen ausgewertet aggregiert werden. Die Resultate werden direkt in ein [GoogleSheet](https://docs.google.com/spreadsheets/d/1YoPTOqTQwlfzCl1znB0g5WgmNr9ZWGLWNmhu9akIvTY Resultate GoogleSheet) geschrieben. 
+Dieses Skript liest die CSV Datein mit den Verbindungen ein, die vom vorhergehenden Skript gespeichert wurden. Dann können die Verbindungen ausgewertet aggregiert werden. Die Resultate werden direkt in ein [GoogleSheet](https://docs.google.com/spreadsheets/d/1YoPTOqTQwlfzCl1znB0g5WgmNr9ZWGLWNmhu9akIvTY "Resultate GoogleSheet") geschrieben. 
