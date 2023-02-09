@@ -40,7 +40,7 @@ gDoc_upload <- function(df, gSheets_url, sheet_name) {
 }
 
 ## url zu einem GoogleSheet, falls upload der Resultate gewünscht wird
-gSheets_url <- "https://docs.google.com/spreadsheets/d/15Ak4mCwkFtfk01fN8lybgYmclJdCAaewMttbRF0W-yM/"
+gSheets_url <- "https://docs.google.com/spreadsheets/d/1YoPTOqTQwlfzCl1znB0g5WgmNr9ZWGLWNmhu9akIvTY"
 ```
 
 
