@@ -1,7 +1,7 @@
 # Analyse der Verspätungen bei Pendlerverbindungen
-Die Verspätungen auf den wichtigsten Pender Verbindungen sollen analysiert werden. In unsere Analyse wurden die Monate Juni bis November 2022 berücksichtigt.
+Die Verspätungen auf den wichtigsten Pender-Verbindungen sollen analysiert werden. In unsere Analyse wurden die Monate Juni bis November 2022 berücksichtigt.
 
-Die Erkenntnisse aus der Analyse wurden am 13. Februar 2023 [auf den Tamedia Newsportalen](https://www.tagesanzeiger.ch "Artikel Tamedia") publiziert.
+Die Erkenntnisse aus der Analyse wird am 14. Februar 2023 auf den [Tamedia Newsportalen](https://www.tagesanzeiger.ch "Artikel Tamedia") publiziert.
 
 Die Analyse findet in zwei Teilen statt:
 
